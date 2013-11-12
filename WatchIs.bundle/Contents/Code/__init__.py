@@ -9,6 +9,7 @@
 
 WATCHIS_URL = 'http://watch.is'
 WATCHIS_VIDEOS = '%s/api/?genre=%%d&page=%%d' % WATCHIS_URL
+WATCHIS_BOOKMARKS = '%s/api/bookmarks?page=%%d' % WATCHIS_URL
 WATCHIS_TOP = '%s/api/top' % WATCHIS_URL
 WATCHIS_GENRES = '%s/api/genres' % WATCHIS_URL
 WATCHIS_SEARCH = '%s/api/?search=%%s&page=%%d' % WATCHIS_URL
@@ -67,6 +68,11 @@ def MainMenu():
 				title	= unicode(L('Genres')),
 				summary	= unicode(L('Genre Categories'))
 			),
+			DirectoryObject(
+				key		= Callback(GetBookmarks, title=unicode(L('Bookmarks')), url=WATCHIS_BOOKMARKS),
+				title	= unicode(L('Bookmarks')),
+				summary	= unicode(L('Bookmarks Page'))
+			),
 			InputDirectoryObject(
 				key		= Callback(Search, title=unicode(L('Search')), url=WATCHIS_SEARCH),
 				title	= unicode(L('Search')),
@@ -123,6 +129,19 @@ def Genres(title, url):
 
 	return oc
 
+####################################################################################################
+@route('/video/watchis/bookmarks', genre=int, page=int, cacheTime=int, allow_sync=True)
+def GetBookmarks(title, url, page=0, cacheTime=0):
+	oc = GetVideosUrl(title, url % page, cacheTime)
+	if oc.header == unicode(L('Error')):
+		return oc
+	# It appears that sometimes we expect another page, but there ends up being no valid videos available
+	if len(oc) == 0 and page > 0:
+		return ObjectContainer(header = unicode(L("No More Videos")), message = unicode(L("No more videos are available...")))
+
+	cbKey = Callback(GetBookmarks, title=title, url=url, genre=genre, page=page + 1, cacheTime=cacheTime)
+	PutNextPage(oc, cbKey)
+	return oc
 
 ####################################################################################################
 @route('/video/watchis/videos', genre=int, page=int, cacheTime=int, allow_sync=True)
