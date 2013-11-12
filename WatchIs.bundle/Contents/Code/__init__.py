@@ -9,6 +9,7 @@
 
 WATCHIS_URL = 'http://watch.is'
 WATCHIS_VIDEOS = '%s/api/?genre=%%d&page=%%d' % WATCHIS_URL
+WATCHIS_BOOKMARKS = '%s/api/bookmarks?page=%%d' % WATCHIS_URL
 WATCHIS_TOP = '%s/api/top' % WATCHIS_URL
 WATCHIS_GENRES = '%s/api/genres' % WATCHIS_URL
 WATCHIS_SEARCH = '%s/api/?search=%%s&page=%%d' % WATCHIS_URL
@@ -67,6 +68,11 @@ def MainMenu():
 				title	= unicode(L('Genres')),
 				summary	= unicode(L('Genre Categories'))
 			),
+			DirectoryObject(
+				key		= Callback(GetBookmarks, title=unicode(L('Bookmarks')), url=WATCHIS_BOOKMARKS),
+				title	= unicode(L('Bookmarks')),
+				summary	= unicode(L('Bookmarks Page'))
+			),
 			InputDirectoryObject(
 				key		= Callback(Search, title=unicode(L('Search')), url=WATCHIS_SEARCH),
 				title	= unicode(L('Search')),
@@ -85,7 +91,7 @@ def MainMenu():
 # We add a default query string purely so that it is easier to be tested by the automated channel tester
 @route('/video/watchis/search', page=int, cacheTime=int, allow_sync=True)
 def Search(query, title, url, page=0, cacheTime=1):
-	oc = GetVideosUrl(title, url % (query, page))
+	oc, nextPage = GetVideosUrl(title, url % (query, page))
 	if oc.header == unicode(L('Error')):
 		return oc
 
@@ -94,8 +100,9 @@ def Search(query, title, url, page=0, cacheTime=1):
 			return ObjectContainer(header = unicode(L("No More Videos")), message = unicode(L("No more videos are available...")))
 		else:
 			return ObjectContainer(header = unicode(L("No Results")), message = unicode(L("No videos found...")))
-
-	PutNextPage(oc, Callback(Search, query=query, title=title, url=url, page=page + 1, cacheTime=cacheTime))
+	
+	if nextPage:	
+		PutNextPage(oc, Callback(Search, query=query, title=title, url=url, page=page + 1, cacheTime=cacheTime))
 	return oc
 
 ####################################################################################################
@@ -123,25 +130,41 @@ def Genres(title, url):
 
 	return oc
 
-
 ####################################################################################################
-@route('/video/watchis/videos', genre=int, page=int, cacheTime=int, allow_sync=True)
-def GetVideos(title, url, genre=0, page=0, cacheTime=CACHE_1HOUR):
-	oc = GetVideosUrl(title, url % (genre, page), cacheTime)
+@route('/video/watchis/bookmarks', genre=int, page=int, cacheTime=int, allow_sync=True)
+def GetBookmarks(title, url, page=0, cacheTime=0):
+	oc, nextPage = GetVideosUrl(title, url % page, cacheTime)
 	if oc.header == unicode(L('Error')):
 		return oc
 	# It appears that sometimes we expect another page, but there ends up being no valid videos available
 	if len(oc) == 0 and page > 0:
 		return ObjectContainer(header = unicode(L("No More Videos")), message = unicode(L("No more videos are available...")))
 
-	cbKey = Callback(GetVideos, title=title, url=url, genre=genre, page=page + 1, cacheTime=cacheTime)
-	PutNextPage(oc, cbKey)
+	if nextPage:
+		cbKey = Callback(GetBookmarks, title=title, url=url, genre=genre, page=page + 1, cacheTime=cacheTime)
+		PutNextPage(oc, cbKey)
+	return oc
+
+####################################################################################################
+@route('/video/watchis/videos', genre=int, page=int, cacheTime=int, allow_sync=True)
+def GetVideos(title, url, genre=0, page=0, cacheTime=CACHE_1HOUR):
+	oc, nextPage = GetVideosUrl(title, url % (genre, page), cacheTime)
+	if oc.header == unicode(L('Error')):
+		return oc
+	# It appears that sometimes we expect another page, but there ends up being no valid videos available
+	if len(oc) == 0 and page > 0:
+		return ObjectContainer(header = unicode(L("No More Videos")), message = unicode(L("No more videos are available...")))
+
+	if nextPage:
+		cbKey = Callback(GetVideos, title=title, url=url, genre=genre, page=page + 1, cacheTime=cacheTime)
+		PutNextPage(oc, cbKey)
 	return oc
 
 ####################################################################################################
 @route('/video/watchis/videos_top', cacheTime=int, allow_sync=True)
 def GetVideosTop(title, url, cacheTime=CACHE_1HOUR):
-	return GetVideosUrl(title, url, cacheTime)
+	oc, nextPage = GetVideosUrl(title, url, cacheTime)
+	return oc
 
 ####################################################################################################
 def GetVideosUrl(title, url, cacheTime=CACHE_1HOUR):
@@ -149,6 +172,14 @@ def GetVideosUrl(title, url, cacheTime=CACHE_1HOUR):
 
 	xml = XML.ElementFromURL(url, cacheTime=cacheTime)
 	total = xml.get("total")
+	if total:
+		total = int(xml.get("total"))
+		page = int(xml.get("page"))
+		pageSize = int(xml.get("pageSize"))
+		nextPage = True if total > (page*pageSize+pageSize) else False
+	else:
+		nextPage = False
+
 	if total and total == '0':
 		return oc
 
@@ -208,7 +239,7 @@ def GetVideosUrl(title, url, cacheTime=CACHE_1HOUR):
 		Log.Exception("Error!")
 		return
 
-	return oc
+	return oc, nextPage
 
 ####################################################################################################
 def PutNextPage(objCont, cbKey):

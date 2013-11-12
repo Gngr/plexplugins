@@ -10,6 +10,7 @@
 import traceback
 
 WATCHIS_URL = 'http://watch.is'
+WATCHIS_LOGIN = '%s/api/?username=%%s&password=%%s' % WATCHIS_URL
 
 ####################################################################################################
 def NormalizeURL(url):
@@ -90,6 +91,7 @@ PlayVideoIndirect = PlayVideo
 
 ####################################################################################################
 def GetDescription(url):
+    Login()
     descXml = XML.ElementFromURL(url, cacheTime=CACHE_1WEEK)
     CheckLoggedIn(descXml)
     descString = XML.StringFromElement(descXml.xpath('//item')[0])
@@ -107,3 +109,10 @@ def TimeToMs(timecode):
     duration = timecode[ : -7]
     seconds = int(duration) * 60
     return seconds * 1000
+
+####################################################################################################
+def Login():
+    Log(' --> Trying to log in')
+
+    url = WATCHIS_LOGIN % (Prefs['username'], Prefs['password'])
+    login = HTTP.Request(url).content
